@@ -1,0 +1,7 @@
+
+alias gstapp : : : : <cxxflags>"`pkg-config --cflags gstreamer-app-1.0`" <linkflags>"`pkg-config --libs gstreamer-app-1.0`" ;
+alias gstreamer : gstapp : : : <cxxflags>"`pkg-config --cflags gstreamer-1.0`" <linkflags>"`pkg-config --libs gstreamer-1.0`" ;
+
+exe babysitter : src/main.cpp gstreamer /boost//program_options : <include>include ;
+
+stage stage : babysitter ;
