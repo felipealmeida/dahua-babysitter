@@ -101,10 +101,7 @@ struct source
     g_signal_connect (audio_decodebin, "pad-added", G_CALLBACK (decodebin_newpad), appsink_sinkpad);
 
     {
-      // auto audio_pad = gst_element_get_request_pad (dmssdemux, "audio_%u");
-      // assert (!!audio_pad);
       GstPad* decodebin_sinkpad = gst_element_get_static_pad (audio_queue1, "sink");
-      ///gst_pad_link (audio_pad, decodebin_sinkpad);
       g_signal_connect (dmssdemux, "pad-added", G_CALLBACK (dmssdemux_newpad), decodebin_sinkpad);
     }
     // {
@@ -125,7 +122,7 @@ struct source
 
     gst_bin_add_many (GST_BIN (pipeline), dmsssrc, dmssdemux, audio_decodebin, audioconvert, filter, audioresample, appsink
                       , audio_queue1, audio_queue2, rganalysis, video_queue, video_fakesink, NULL);
-    if (gst_element_link_many (dmsssrc, dmssdemux, video_fakesink, NULL) != TRUE
+    if (gst_element_link_many (dmsssrc, dmssdemux, video_queue, video_fakesink, NULL) != TRUE
         || gst_element_link_many (audio_queue2, rganalysis, audioconvert, audioresample, appsink, NULL) != TRUE
         || gst_element_link_many (audio_queue1, audio_decodebin, NULL) != TRUE
         )
@@ -311,7 +308,7 @@ private:
   }
   static GstFlowReturn appsink_sample (GstAppSink *appsink, gpointer user_data)
   {
-    std::cout << "appsink sample " << user_data << std::endl;
+    //std::cout << "appsink sample " << user_data << std::endl;
     source* self = static_cast<source*>(user_data);
 
     assert (!!self->appsink);
@@ -327,6 +324,7 @@ private:
   static gboolean
   message_cb (GstBus * bus, GstMessage * message, gpointer user_data)
   {
+    //std::cout << "message_cb " << GST_MESSAGE_TYPE (message) << std::endl;
     if (GST_MESSAGE_TYPE (message) == GST_MESSAGE_ELEMENT)
     {
       ///std::cout << "which kind of element maybe? " << gst_structure_get_name (gst_message_get_structure(message)) << std::endl;
@@ -339,12 +337,16 @@ private:
           double level = 0;
           if (gst_structure_get_double (s, "rglevel", &level))
           {
-            //if (level > -30.)
+            if (level > -10.)
               std::cout << "level for current window is " << level << std::endl;
             self->current_level = level;
           }
         }
       }        
+    }
+    else if(GST_MESSAGE_TYPE (message) == GST_MESSAGE_ELEMENT)
+    {
+      std::cout << "error" << std::endl; 
     }
   }
 

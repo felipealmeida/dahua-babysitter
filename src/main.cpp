@@ -104,7 +104,7 @@ main (int   argc,
         (
          [&,index] (GstSample* sample)
          {
-           std::cout << "appsink " << index << std::endl;
+           //std::cout << "appsink " << index << std::endl;
            static GstClockTime timestamp_offset;
 
            GstBuffer* buffer = gst_sample_get_buffer (sample);
@@ -145,7 +145,7 @@ main (int   argc,
                gst_element_set_state(sound_sink.pipeline, GST_STATE_PLAYING);
              }
            }
-           else// if (sources[index].current_level > -10. || threshold_remaining[index] != 0)
+           else if (sources[index].current_level > -10. || threshold_remaining[index] != 0)
            {
              if (threshold_remaining[index] == 0)
                threshold_remaining[index] = 500;
@@ -203,7 +203,7 @@ main (int   argc,
        {
          std::cout << "Error happened in dmsssrc" << std::endl;
 
-         //gst_element_set_state(sound_sink.pipeline, GST_STATE_PAUSED);
+         gst_element_set_state(sound_sink.pipeline, GST_STATE_PAUSED);
          reset_caps[index] = false;
          gst_element_set_state(sources[index].pipeline, GST_STATE_READY);
          gst_element_set_state(sources[index].pipeline, GST_STATE_PLAYING);
