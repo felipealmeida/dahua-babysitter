@@ -67,7 +67,7 @@ struct sound_sink
           throw std::runtime_error ("Not all elements could be created in visualization.");
         std::cout << "created" << std::endl;
         gst_bin_add (GST_BIN (pipeline), convert);
-        gst_element_link (appsrc[i], convert);
+        gst_element_link (source, convert);
         auto src_pad = gst_element_get_static_pad (convert, "src");
         assert (!!src_pad);
         auto sink_pad = gst_element_get_request_pad (audiomixer, "sink_%u");

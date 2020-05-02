@@ -18,12 +18,35 @@ esample ! audiomixer name=m ! autoaudiosink  dmsssrc host=nvr.localdomain user=a
 #include <boost/program_options.hpp>
 #include <boost/dynamic_bitset.hpp>
 
+#include <sys/wait.h>
 
 /* This function is called when an error message is posted on the bus */
 template <typename F>
 static void error_cb (GstBus *bus, GstMessage *msg, void *data)
 {
   (*static_cast<F*>(data)) (bus, msg);
+}
+
+void turn_monitor_on ()
+{
+  char* argv[] = {"/usr/bin/xset", "dpms", "force", "on", NULL};
+  int status;
+  auto pid = fork();
+  if (!pid)
+    execve ("/usr/bin/xset",  argv, environ);
+  else
+    waitpid (pid, &status, 0);
+}
+
+void turn_monitor_off ()
+{
+  char* argv[] = {"/usr/bin/xset", "dpms", "force", "off", NULL};
+  int status;
+  auto pid = fork();
+  if (!pid)
+    execve ("/usr/bin/xset",  argv, environ);
+  else
+    waitpid (pid, &status, 0);
 }
 
 int
@@ -37,6 +60,7 @@ main (int   argc,
   std::vector<int> ports;
   std::vector<int> channels;
   int port2;
+  unsigned int width = 1280, height = 720;
   
   {
     namespace po = boost::program_options;
@@ -81,6 +105,10 @@ main (int   argc,
     } else {
       std::cout << "Compression level was not set.\n";
     }
+
+    if (vm.count("width")) width = vm["width"].as<unsigned int>();
+    if (vm.count("height")) height = vm["height"].as<unsigned int>();
+    
   }
   
   gst_init (&argc, &argv);
@@ -90,6 +118,8 @@ main (int   argc,
   printf ("This program is linked against GStreamer %d.%d.%d\n",
           major, minor, micro);
 
+  std::cout << "window size " << width << "x" << height << std::endl;
+  
   std::vector<rtvc::pipeline::source> sources(hosts.size());
   rtvc::pipeline::sound_sink sound_sink(hosts.size());
   boost::dynamic_bitset<> sources_loaded(hosts.size());
@@ -151,14 +181,50 @@ main (int   argc,
            {
              if (!visualization)
              {
-               visualization.reset (new rtvc::pipeline::visualization);
+               turn_monitor_on ();
+               visualization.reset (new rtvc::pipeline::visualization (width, height));
+               std::shared_ptr<bool> set_caps (new bool{true});
                sources[index].sample_video_signal.connect
-                 ([&, index] (GstSample* sample)
+                 ([&, index, set_caps = std::move(set_caps)] (GstSample* sample)
                   {
-                    std::cout << "video sample" << std::endl;
+                    //std::cout << "video sample" << std::endl;
+                    static GstClockTime timestamp_offset;
+
+                    GstBuffer* buffer = gst_sample_get_buffer (sample);
+                    if (*set_caps)
+                    {
+                      timestamp_offset = GST_BUFFER_TIMESTAMP (buffer);
+                      GstCaps* caps = gst_sample_get_caps (sample);
+
+                      std::cout << "video appsrc caps will be " << gst_caps_to_string (caps) << std::endl;
+         
+                      gst_app_src_set_caps (GST_APP_SRC (visualization->appsrc), caps);
+                      //   gst_app_src_set_caps (GST_APP_SRC (motion_pipeline.appsrc), caps);
+                      gst_caps_unref (caps);
+                      *set_caps = false;
+
+                      GstBuffer* tmp = gst_buffer_copy (buffer);
+                      GST_BUFFER_TIMESTAMP (tmp) = 0;
+                      GstFlowReturn r;
+                      if ((r = gst_app_src_push_buffer (GST_APP_SRC(visualization->appsrc), tmp)) != GST_FLOW_OK)
+                      {
+                        std::cout << "Error with gst_app_src_push_buffer for view_pipeline, return " << r << std::endl;
+                      }
+
+                      gst_element_set_state(visualization->pipeline, GST_STATE_READY);
+                      gst_element_set_state(visualization->pipeline, GST_STATE_PLAYING);
+                    }
+                    else
+                    {
+                      GstBuffer* tmp = gst_buffer_copy (buffer);
+                      GST_BUFFER_TIMESTAMP (tmp) -= timestamp_offset;
+                      GstFlowReturn r;
+                      if ((r = gst_app_src_push_buffer (GST_APP_SRC(visualization->appsrc), tmp)) != GST_FLOW_OK)
+                      {
+                        std::cout << "Error with gst_app_src_push_buffer for view_pipeline, return " << r << std::endl;
+                      }
+                    }
                   });
-               gst_element_set_state(visualization->pipeline, GST_STATE_READY);
-               gst_element_set_state(visualization->pipeline, GST_STATE_PLAYING);
              }
              
              if (threshold_remaining[index] == 0)
@@ -167,12 +233,14 @@ main (int   argc,
              {
                if (--threshold_remaining[index] == 0)
                {
+                 std::cout << "Reached 0, stopping video" << std::endl;
                  sources[index].sample_video_signal.disconnect_all_slots ();
-                 gst_element_set_state(sound_sink.pipeline, GST_STATE_READY);
+                 gst_element_set_state (visualization->pipeline, GST_STATE_NULL);
                  visualization.reset();
+                 turn_monitor_off();
                }
              }
-             std::cout << "volume above threshold, pushing" << std::endl;
+             //std::cout << "volume above threshold, pushing" << std::endl;
              // std::cout << "sending buffer" << std::endl;
              GstBuffer* tmp = gst_buffer_copy (buffer);
              //GstBuffer* tmp1 = gst_buffer_copy (buffer);
