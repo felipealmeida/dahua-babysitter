@@ -6,6 +6,7 @@ esample ! audiomixer name=m ! autoaudiosink  dmsssrc host=nvr.localdomain user=a
  */
 #include <rtvc/pipeline/source.hpp>
 #include <rtvc/pipeline/sound.hpp>
+#include <rtvc/pipeline/visualization.hpp>
 
 #include <gst/gst.h>
 #include <gst/app/gstappsink.h>
@@ -94,6 +95,7 @@ main (int   argc,
   boost::dynamic_bitset<> sources_loaded(hosts.size());
   boost::dynamic_bitset<> reset_caps(hosts.size());
   std::vector<unsigned int> threshold_remaining(hosts.size());
+  std::unique_ptr<rtvc::pipeline::visualization> visualization;
   {
     unsigned int index = 0;
     for (auto&& host : hosts)
@@ -147,10 +149,29 @@ main (int   argc,
            }
            else if (sources[index].current_level > -10. || threshold_remaining[index] != 0)
            {
+             if (!visualization)
+             {
+               visualization.reset (new rtvc::pipeline::visualization);
+               sources[index].sample_video_signal.connect
+                 ([&, index] (GstSample* sample)
+                  {
+                    std::cout << "video sample" << std::endl;
+                  });
+               gst_element_set_state(visualization->pipeline, GST_STATE_READY);
+               gst_element_set_state(visualization->pipeline, GST_STATE_PLAYING);
+             }
+             
              if (threshold_remaining[index] == 0)
                threshold_remaining[index] = 500;
              else
-               --threshold_remaining[index];
+             {
+               if (--threshold_remaining[index] == 0)
+               {
+                 sources[index].sample_video_signal.disconnect_all_slots ();
+                 gst_element_set_state(sound_sink.pipeline, GST_STATE_READY);
+                 visualization.reset();
+               }
+             }
              std::cout << "volume above threshold, pushing" << std::endl;
              // std::cout << "sending buffer" << std::endl;
              GstBuffer* tmp = gst_buffer_copy (buffer);

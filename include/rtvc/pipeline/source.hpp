@@ -33,17 +33,19 @@ struct source
   GstElement *audio_queue1, *audio_queue2;
   GstElement *rganalysis;
   GstElement *video_queue;
-  GstElement *video_fakesink;
   GstElement *video_appsink;
   GstElement *pipeline;
   double current_level;
   gulong bus_connection;
+  boost::signals2::signal <void (GstSample*)> sample_signal;  
+  boost::signals2::signal <void (GstSample*)> sample_video_signal;  
 
   source() : dmsssrc (nullptr), dmssdemux(nullptr), audio_decodebin(nullptr)
            , audioconvert(nullptr), filter(nullptr), audioresample(nullptr)
            , appsink(nullptr), video_appsink(nullptr), pipeline(nullptr)
            , rganalysis(nullptr)
-           , sample_signal{}, current_level(0.)
+           , current_level(0.)
+           , sample_signal{}, sample_video_signal{}
   {
     std::cout << "default constructor " << this << std::endl;
   }
@@ -57,7 +59,6 @@ struct source
     , filter (gst_element_factory_make ("audiocheblimit", "audiocheblimit"))
     , audioresample (gst_element_factory_make ("audioresample", "audioresample"))
     , appsink (gst_element_factory_make ("appsink", "audio_appsink"))
-    , video_fakesink (gst_element_factory_make ("fakesink", "video_fakesink"))
     , video_appsink (gst_element_factory_make ("appsink", "video_appsink"))
     , video_queue (gst_element_factory_make ("queue", "video_queue"))
     , audio_queue1 (gst_element_factory_make ("queue", "audio_queue1"))
@@ -94,7 +95,6 @@ struct source
     g_object_set (G_OBJECT (dmsssrc), "host", host.c_str(), "port", port, "user", username.c_str(), "password", password.c_str()
                   , "channel", channel, "subchannel", subchannel, NULL);
     g_object_set (G_OBJECT (dmsssrc), "timeout", 15, NULL);
-    g_object_set (G_OBJECT (video_fakesink), "sync", FALSE, NULL);
     g_object_set (G_OBJECT (rganalysis), "message", TRUE, NULL);
 
     GstPad* appsink_sinkpad = gst_element_get_static_pad (audio_queue2, "sink");
@@ -104,25 +104,27 @@ struct source
       GstPad* decodebin_sinkpad = gst_element_get_static_pad (audio_queue1, "sink");
       g_signal_connect (dmssdemux, "pad-added", G_CALLBACK (dmssdemux_newpad), decodebin_sinkpad);
     }
-    // {
-    //   GstPad* demux_video = gst_element_get_static_pad (dmssdemux, "video");
-    //   GstPad* fakesink_src = gst_element_get_static_pad (video_fakesink, "sink");
-    //   gst_pad_link (demux_video, fakesink_src);
-    // }
 
     std::cout << "this is " << this << std::endl;
     
-    GstAppSinkCallbacks callbacks
+    GstAppSinkCallbacks callbacks1
       = {
          &appsink_eos
          , &appsink_preroll
          , &appsink_sample
         };
-    gst_app_sink_set_callbacks ( GST_APP_SINK(appsink), &callbacks, this, appsink_notify_destroy);
+    gst_app_sink_set_callbacks ( GST_APP_SINK(appsink), &callbacks1, this, appsink_notify_destroy);
+    GstAppSinkCallbacks callbacks2
+      = {
+         &appsink_eos
+         , &appsink_preroll
+         , &appsink_video_sample
+        };
+    gst_app_sink_set_callbacks ( GST_APP_SINK(video_appsink), &callbacks2, this, appsink_notify_destroy);
 
     gst_bin_add_many (GST_BIN (pipeline), dmsssrc, dmssdemux, audio_decodebin, audioconvert, filter, audioresample, appsink
-                      , audio_queue1, audio_queue2, rganalysis, video_queue, video_fakesink, NULL);
-    if (gst_element_link_many (dmsssrc, dmssdemux, video_queue, video_fakesink, NULL) != TRUE
+                      , audio_queue1, audio_queue2, rganalysis, video_queue, video_appsink, NULL);
+    if (gst_element_link_many (dmsssrc, dmssdemux, video_queue, video_appsink, NULL) != TRUE
         || gst_element_link_many (audio_queue2, rganalysis, audioconvert, audioresample, appsink, NULL) != TRUE
         || gst_element_link_many (audio_queue1, audio_decodebin, NULL) != TRUE
         )
@@ -171,27 +173,42 @@ struct source
     std::swap(bus_connection, other.bus_connection);
     std::swap(current_level, other.current_level);
     swap(sample_signal, other.sample_signal);
+    swap(sample_video_signal, other.sample_video_signal);
     if (appsink)
     {
-      GstAppSinkCallbacks callbacks
+      GstAppSinkCallbacks callbacks1
         = {
            &appsink_eos
            , &appsink_preroll
            , &appsink_sample
           };
 
-      gst_app_sink_set_callbacks ( GST_APP_SINK(appsink), &callbacks, this, appsink_notify_destroy);
+      gst_app_sink_set_callbacks ( GST_APP_SINK(appsink), &callbacks1, this, appsink_notify_destroy);
+      GstAppSinkCallbacks callbacks2
+        = {
+           &appsink_eos
+           , &appsink_preroll
+           , &appsink_video_sample
+          };
+      gst_app_sink_set_callbacks ( GST_APP_SINK(video_appsink), &callbacks2, this, appsink_notify_destroy);
     }
     if (other.appsink)
     {
-      GstAppSinkCallbacks callbacks
+      GstAppSinkCallbacks callbacks1
         = {
            &appsink_eos
            , &appsink_preroll
            , &appsink_sample
           };
 
-      gst_app_sink_set_callbacks ( GST_APP_SINK(other.appsink), &callbacks, &other, appsink_notify_destroy);
+      gst_app_sink_set_callbacks ( GST_APP_SINK(other.appsink), &callbacks1, &other, appsink_notify_destroy);
+      GstAppSinkCallbacks callbacks2
+        = {
+           &appsink_eos
+           , &appsink_preroll
+           , &appsink_video_sample
+          };
+      gst_app_sink_set_callbacks ( GST_APP_SINK(other.video_appsink), &callbacks2, &other, appsink_notify_destroy);
     }
 
     if (pipeline)
@@ -231,6 +248,7 @@ struct source
     , audioconvert(other.audioconvert), filter(other.filter)
     , audioresample(other.audioresample), appsink(other.appsink), video_appsink(other.video_appsink)
     , pipeline(other.pipeline), sample_signal(std::move(other.sample_signal))
+    , sample_video_signal(std::move(other.sample_video_signal))
     , bus_connection(other.bus_connection), current_level(other.current_level)
   {
     std::cout << "move constructor " << this << " from " << &other << std::endl;
@@ -243,14 +261,21 @@ struct source
     other.appsink = nullptr;
     other.video_appsink = nullptr;
     std::cout << "MOVED this is " << this << std::endl;
-    GstAppSinkCallbacks callbacks
+    GstAppSinkCallbacks callbacks1
       = {
          &appsink_eos
          , &appsink_preroll
          , &appsink_sample
         };
 
-    gst_app_sink_set_callbacks ( GST_APP_SINK(appsink), &callbacks, this, appsink_notify_destroy);
+    gst_app_sink_set_callbacks ( GST_APP_SINK(appsink), &callbacks1, this, appsink_notify_destroy);
+    GstAppSinkCallbacks callbacks2
+      = {
+         &appsink_eos
+         , &appsink_preroll
+         , &appsink_video_sample
+        };
+    gst_app_sink_set_callbacks ( GST_APP_SINK(video_appsink), &callbacks2, this, appsink_notify_destroy);
 
     GstBus* bus = gst_element_get_bus (pipeline);
     std::cout << "clearing " << bus_connection << std::endl;
@@ -261,7 +286,6 @@ struct source
     gst_object_unref (GST_OBJECT (bus));
   }
   
-  boost::signals2::signal <void (GstSample*)> sample_signal;  
 private:
   static void decodebin_newpad (GstElement *decodebin, GstPad *pad, gpointer data)
   {
@@ -316,6 +340,20 @@ private:
     
     GstSample* sample = gst_app_sink_pull_sample (GST_APP_SINK (appsink));
     self->sample_signal (sample);
+    gst_sample_unref (sample);
+
+    return GST_FLOW_OK;
+  }
+  static GstFlowReturn appsink_video_sample (GstAppSink *appsink, gpointer user_data)
+  {
+    //std::cout << "appsink sample " << user_data << std::endl;
+    source* self = static_cast<source*>(user_data);
+
+    assert (!!self->video_appsink);
+    assert (self->video_appsink == GST_ELEMENT(appsink));
+    
+    GstSample* sample = gst_app_sink_pull_sample (GST_APP_SINK (appsink));
+    self->sample_video_signal (sample);
     gst_sample_unref (sample);
 
     return GST_FLOW_OK;
