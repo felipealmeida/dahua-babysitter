@@ -61,6 +61,7 @@ main (int   argc,
   std::vector<int> channels;
   int port2;
   unsigned int width = 1280, height = 720;
+  bool flip = false;
   
   {
     namespace po = boost::program_options;
@@ -76,6 +77,7 @@ main (int   argc,
       ("channel", po::value<std::vector<int>>(), "Channel to show")
       ("width", po::value<unsigned int>(), "Width of the Window")
       ("height", po::value<unsigned int>(), "Height of the Window")
+      ("flip", "Flip image 90 degrees clockwise")
       ;
 
     po::variables_map vm;
@@ -108,7 +110,7 @@ main (int   argc,
 
     if (vm.count("width")) width = vm["width"].as<unsigned int>();
     if (vm.count("height")) height = vm["height"].as<unsigned int>();
-    
+    if (vm.count("flip")) flip = true;
   }
   
   gst_init (&argc, &argv);
@@ -182,7 +184,7 @@ main (int   argc,
              if (!visualization)
              {
                turn_monitor_on ();
-               visualization.reset (new rtvc::pipeline::visualization (width, height));
+               visualization.reset (new rtvc::pipeline::visualization (width, height, flip));
                std::shared_ptr<bool> set_caps (new bool{true});
                sources[index].sample_video_signal.connect
                  ([&, index, set_caps = std::move(set_caps)] (GstSample* sample)

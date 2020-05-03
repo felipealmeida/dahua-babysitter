@@ -12,6 +12,7 @@
 
 #include <gst/gst.h>
 #include <gst/app/gstappsrc.h>
+#include <gst/video/video.h>
 
 #include <string>
 #include <stdexcept>
@@ -23,15 +24,17 @@ struct visualization
   GstElement* appsrc;
   GstElement* decodebin;
   GstElement* queue;
+  GstElement* videoflip;
   GstElement* videoscale;
   GstElement* scale_capsfilter;
   GstElement* videoconvert;
   GstElement *sink;
   GstElement *pipeline;
 
-  visualization (int width, int height)
+  visualization (int width, int height, bool flip)
     : appsrc (gst_element_factory_make ("appsrc", "video_appsrc"))
     , decodebin (gst_element_factory_make ("decodebin", "video_decodebin"))
+    , videoflip (nullptr)
     , queue (gst_element_factory_make ("queue", "video_queue"))
     , videoscale (gst_element_factory_make ("videoscale", "videoscale"))
     , scale_capsfilter (gst_element_factory_make ("capsfilter", "scale_capsfilter"))
@@ -54,6 +57,15 @@ struct visualization
     if (!pipeline)
       throw std::runtime_error ("Couldn't create video pipeline");
 
+    if (flip)
+    {
+      videoflip = gst_element_factory_make ("videoflip", "videoflip");
+      if (!videoflip)
+        throw std::runtime_error ("Couldn't create videoflip plugin");
+      g_object_set (G_OBJECT (videoflip), "video-direction", GST_VIDEO_ORIENTATION_90R, NULL);
+      gst_bin_add (GST_BIN (pipeline), videoflip);
+    }
+
     g_object_set (G_OBJECT (appsrc), "format", GST_FORMAT_TIME, NULL);
     g_object_set (G_OBJECT (appsrc), "is-live", TRUE, NULL);
     gst_app_src_set_stream_type(GST_APP_SRC(appsrc), GST_APP_STREAM_TYPE_STREAM);
@@ -67,7 +79,9 @@ struct visualization
 
     gst_bin_add_many (GST_BIN (pipeline), appsrc, decodebin, queue, videoscale, scale_capsfilter, videoconvert, sink, NULL);
     if (gst_element_link_many (appsrc, decodebin, NULL) != TRUE
-        || gst_element_link_many (queue, videoscale, scale_capsfilter, videoconvert, sink, NULL) != TRUE)
+        || (!flip ? gst_element_link_many (queue, videoscale, scale_capsfilter, videoconvert, sink, NULL)
+            : gst_element_link_many (queue, videoflip, videoscale, scale_capsfilter, videoconvert, sink, NULL)
+            ) != TRUE)
     {
       throw std::runtime_error ("Elements could not be linked.\n");
     }    
