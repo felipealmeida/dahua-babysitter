@@ -142,6 +142,8 @@ main (int   argc,
            static GstClockTime timestamp_offset;
 
            GstBuffer* buffer = gst_sample_get_buffer (sample);
+           assert (!!buffer);
+           assert (GST_IS_BUFFER (buffer));
            if(!reset_caps[index])
            {
              timestamp_offset = GST_BUFFER_TIMESTAMP (buffer);
@@ -155,6 +157,8 @@ main (int   argc,
              reset_caps[index] = true;
 
              GstBuffer* tmp = gst_buffer_copy (buffer);
+             assert (!!tmp);
+             assert (GST_IS_BUFFER (tmp));
              //GstBuffer* tmp1 = gst_buffer_copy (buffer);
              // gst_buffer_ref (tmp);
              // gst_buffer_ref (buffer);
@@ -193,6 +197,8 @@ main (int   argc,
                     static GstClockTime timestamp_offset;
 
                     GstBuffer* buffer = gst_sample_get_buffer (sample);
+                    assert (!!buffer);
+                    assert (GST_IS_BUFFER (buffer));
                     if (*set_caps)
                     {
                       timestamp_offset = GST_BUFFER_TIMESTAMP (buffer);
@@ -206,6 +212,8 @@ main (int   argc,
                       *set_caps = false;
 
                       GstBuffer* tmp = gst_buffer_copy (buffer);
+                      assert (!!tmp);
+                      assert (GST_IS_BUFFER (tmp));
                       GST_BUFFER_TIMESTAMP (tmp) = 0;
                       GstFlowReturn r;
                       if ((r = gst_app_src_push_buffer (GST_APP_SRC(visualization->appsrc), tmp)) != GST_FLOW_OK)
@@ -219,6 +227,8 @@ main (int   argc,
                     else
                     {
                       GstBuffer* tmp = gst_buffer_copy (buffer);
+                      assert (!!tmp);
+                      assert (GST_IS_BUFFER (tmp));
                       GST_BUFFER_TIMESTAMP (tmp) -= timestamp_offset;
                       GstFlowReturn r;
                       if ((r = gst_app_src_push_buffer (GST_APP_SRC(visualization->appsrc), tmp)) != GST_FLOW_OK)
@@ -248,6 +258,8 @@ main (int   argc,
              //GstBuffer* tmp1 = gst_buffer_copy (buffer);
              // gst_buffer_ref (tmp);
              // gst_buffer_ref (buffer);
+             assert (!!tmp);
+             assert (GST_IS_BUFFER (tmp));
              GST_BUFFER_TIMESTAMP (tmp) -= timestamp_offset;
              //GST_BUFFER_TIMESTAMP (tmp1) -= timestamp_offset;
              GstFlowReturn r;
